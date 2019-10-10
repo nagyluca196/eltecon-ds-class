@@ -1,0 +1,64 @@
+---
+title: "hf2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(magrittr))
+```
+
+
+```{r}
+crime_raw <- fread("~/Eltecon-ds-class/crime.csv")
+```
+
+```{r}
+
+shooting<- crime_raw[SHOOTING == "Y"]
+freq_group <- sort(table(shooting$OFFENSE_CODE), decreasing=TRUE)[1:5]
+
+names_freq_group <- names(sort(table(shooting$OFFENSE_CODE_GROUP), decreasing=TRUE)[1:5])
+
+names_freq_group
+```
+
+```{r}
+shooting[OFFENSE_CODE_GROUP %in% names_freq_group]
+
+```
+
+```{r}
+plot1 <- shooting[OFFENSE_CODE_GROUP %in% names_freq_group, .N, by=.(HOUR, OFFENSE_CODE_GROUP)]
+
+plot_1 <- ggplot(plot1, aes(x = HOUR, y = N)) +geom_col(fill="pink") +
+    facet_wrap(OFFENSE_CODE_GROUP~., scales="free")+
+  labs(
+    x="Time of incident (hour)",
+    y="Number of incidents",
+    title="The 5 most frequent shooting crimes"
+  )
+  plot_1
+    
+```
+
+```{r}
+ plot_2 <-  ggplot(plot1, aes(fill=OFFENSE_CODE_GROUP, x=HOUR, y=N))+ 
+geom_bar(position="dodge", stat="identity")+
+  labs(
+    x="Time of incident (hour)", 
+    y="Number of incidents",
+    title="The 5 most frequent shooting crimes"
+    )
+plot_2
+
+```
+#A Ballistics kivételével 4 offense napon belüli eloszlása szinte ugyanolyan mintát követ, ami alapján nappal kevés a lövéssel járó eset, de egy délutáni kis, és 21-03 közötti nagy csúcs rajzolódik ki. Ezek alapján azt vonhatjuk le, hogy a legtöbb lövéssel járó eset éjszaka történik. Az esetek számának alakulása függhet a környéktől, akár attól, hogy éjszaka fokozott rendőri jelenlét miatt több esetet "kapnak el", vagy a szándékolt időzítéstől is.
+
+
+
