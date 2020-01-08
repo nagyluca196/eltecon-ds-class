@@ -1,0 +1,277 @@
+---
+title: "A madridi Airbnb kínálata"
+author: "Nagy Luca Sára"
+date: '2020.01.10. '
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    theme: yeti
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(ggplot2)
+library(knitr)
+library(magrittr)
+library(rmarkdown)
+library(bootstrap)
+library(readr)
+library(bit64)
+library(DT)
+```
+
+# Bevezetés
+
+A feladat során fel kellett tennünk egy kérdést, adatot kellett keresnünk és felderítő elemzést végezni.
+
+A zrájó projektemben a lépések megfordultak, és először adatokat találtam, majd utána tettem fel egy kérdést és kezdtem el a felderítő elemzést.
+
+Először egy predikciós modellben gondolkodtam, ami meghatározná a várható éjszaka/fő árat, de az adatok megismerése közben inkább afelé húzott a kíváncsiság, mitől függ, hogy az a szállás éppen üres? Meg lehet jósolni, hogy milyen paraméterek adnak jó esélyt arra, hogy magas legyen a kihasználtság?
+
+Tehát a végső kérdésem a következő:
+
+Mitől függ egy Airbnb lefoglaltsága?
+
+Ugyanakkor ha erre a kérdésre választ találtam, már megvoltak azok a változók amik befolyásolhatják a foglaltságot, így egy lépéssel tovább mentem és készítettem egy egyszerű predikciós modellt.
+
+Az adatbázis - mint ahogy azt az elsődleges leíró statisztikáknál is megemlítem - viszonylag nagy és rengeteg elemzési lehetőséget nyer. A feladat megoldása során igyekeztem egy kisebb részre koncantrálni, hogy ne vesszek el, de ugyanakkor megpróbáltam új technikákat felhasználni
+
+
+#Adatok forrása és rövid háttere
+Az adatokat ehhez a projekthez közvetlenül Kaggle-ről töltöttem le az alábbielérhetőségen:
+https://www.kaggle.com/rusiano/madrid-airbnb-data
+
+Az adatbázis készítője ebben a formátumban az Inside Airbnb projekt. Az Inside Airbnb az Airbnb oldalon elérhető publikus adatokat gyűjti és elemzi, jelenleg több mint 50 városról tekinthetünk meg interakítv térképeket.
+
+Madridról a következő interaktív térkép elérhető:
+http://insideairbnb.com/madrid
+
+Mivel az adatokat közzéteszik és néhány városban akár havonta tesznek közzé új scrape-t, egy rövid időre felmerült bennem másik város, mint Madrid elemzése - így ha fura eredmények jönnek ki, könnyebben tudom magyarázni helyismeret segítségével. Az egyik város Budapest lett volna, de itt pont nincs összegyűjtött adat. A másik város Tokió, de ott feleannyi listázásról volt információ és nagyon egyenlőtlenül szóródtak a helyszínek, ezért azt is elvetettem.
+
+#Elsődleges leró statisztika
+
+A teljes adatbázis 7 fájlt tartalmaz, ezek közül 6 .csv és 1 .geojson formátum.
+
+Már a Kaggle-n lévő előnézetnél egyértelmű volt, hogy nem lesz szükségem mindegyik táblára, ezért első körben elhagytam a .geojson fájlt és a maradék 6 táblát egyesével is megnéztem. 
+
+## A táblákban található változók {.tabset .tabset-pills}
+
+Az egszerűbb áttekinthetőség kedvéért kiírattam a különböző táblák változóit és kiválasztottam azokat a változókat amiket a végső adatbázisban fel fogok használni.
+
+*Megjegyzés ehhez a szakaszhoz ami a prezentáción szóban fog elhangzani:
+Első tervben ehhez a szakaszhoz minden tábláról szerettem volna summary()-t kiíratni, de ez a változók sokasága miatt nem volt se áttekinthető se esztétikus. Természetesen megnéztem a táblákat, de itt csak a neveket listázom és a későbbiekben kerülnek elő summary-k. Kihagyhattam volna a táblák eredeti bemutatását, de jobbnak láttam teljesen az elejétől bemutatni milyen lépéseket tettem *
+
+###Calendar
+```{r calendar, echo=FALSE}
+calendar <- fread("Madrid_data/calendar.csv")
+kable(calendar[1:3], digits = 30)
+```
+
+###Listings
+```{r listings, echo=FALSE}
+listings <- fread("Madrid_data/listings.csv")
+kable(listings[1:3], digits = 30)
+```
+
+###Listings detailed
+(A táblában 106 változó van)
+```{r, echo=FALSE}
+listings_detailed <- fread("Madrid_data/listings_detailed.csv")
+kable(listings_detailed[1:3, ], digits =30)
+```
+
+###Neighbourhoods
+```{r, echo=FALSE}
+neighbourhoods <- fread("Madrid_data/neighbourhoods.csv")
+kable(neighbourhoods[1:3], digits = 30)
+```
+
+###Reviews
+```{r, echo=FALSE}
+reviews <- fread("Madrid_data/reviews.csv")
+kable(reviews[1:3], digits = 30)
+```
+
+###Reviews detailed
+```{r, echo=FALSE}
+reviews_detailed <- fread("Madrid_data/reviews_detailed.csv")
+kable(reviews_detailed[1:3], digits = 30)
+```
+
+##A végleges tábla elkészítése
+
+Ha végiglapozzuk a táblákat akkor láthatjuk, hogy a Neighbourhoods és Reviews tábla elhagyható, mivel ezek az értékekjelen vannak másik táblákban. A legtöbb változót kétség kívül a listings_detailed táblából kell elhagyni, illetve nincs értelme megtartani a szöveges értékeléseket. Azokat az oszlopokat ahol szöveges kategóriák vannak (amik könnyen átalakíthatók) megtartottam, hátha valami érdekes is látszik belőle.
+
+A táblákat az apartmanok id-ja alapján tudjuk összekapcsolni és a következő változókat hagytam meg:
+
+listing_id (szállás id-ja), date, avaiable, price, minimum nights, maximum nights
+host id, neighbourhood, neighbourhood group, room type, number of reviews, last review, availability
+host response time, host response rate, host is superhost, host neighbourhood, host listings count, host has profile pic, host identity verified, neighbourhood, is location exact, property type, room type, accomodates, bathrooms, bedrooms, beds, bedtype, squarefeet, weekly price, montly price, security deposit, cleaning fee, extra people, calendar updated, has availability, review scores (mindegyik típus), requires licence, cancellation policy, require guest profile picture
+
+Ami változók érdekesek lettek volna de szövegből nem tudtam "visszafejteni": amenities
+
+#Az "idő" problémája
+
+Sajnos a valós foglaltsági adatok nem elérhetők. Ezt az adatot az ár várható értéke esetén is érdemes lenne tudn, legalábbis az occupancy rate-t. Szerencsé(m)re az Inside Airbnb csapat közzé tette a módeszert amivel ők egy tanulmány alapján kiszámolták a foglaltságot.
+
+A válasz az értékelésekben rejlik, illetve a számukban, és a módszer a következő lépésekből áll:
+1. 50%-os értékelési ráta -> minden második vendég hagy értékelést
+2. Az értékelések számát megszorozzuk a városra jellemző átlagos tartózkodással (ez madrid esetében 4,6 nap)
+https://www.airbnbcitizen.com/wp-content/uploads/2015/06/Madrid-release-ENG.pdf
+3. Beállítunk egy 70%-os maximum kihasználtságot
+
+Ez az adatbázis egy szept. 19-i gyűjtés. A korábbi illetve későbbi gyűjtések közzött a változó adatok a reviews és calendar táblákban találhatók. Mivel a kihasználtságot a reviews alapján becslik a fenti módszerrel, a szept. 19-i értékeléseket frissítettem az októberi értékelésekkel. Az új értékelésket október 14-ig emeltem be, így a szeptemberi vendégéjszakákat tudtam becsülni. (Az Airbnb szerint egy vendég maximum 2 héten belül hagy értékelést.)
+
+Az Airbnb jellegéből adódoan - nem több szobás, elvileg nem tisztán "hostel" - ne felejtsük el, hogy egy-egy Airbnb em közönségcélpont, így nem feltétlenül az a cél hogy pont abban az apartmanban szálljunk meg. Ezért nem vetettem össze a korábbi calendarokat.
+
+#Végeleges adatbázis a megadott változókkal
+```{r, echo=FALSE}
+reviewsoctober <- fread("Madrid_data/revoct.csv")
+```
+
+A megfigyeléseket leszűkítettem 2019. június 1. és 2019. szeptember 30. között. 
+
+```{r}
+#Első körben a két "óriás" adatfájlt, calendart és a reviews-t szűkítettem le időben.
+summary(reviewsoctober$date)
+
+reviews <- subset(reviewsoctober, reviewsoctober$date >= "2019-06-06" & reviewsoctober$date<="2019-10-14")
+
+summary(reviews$date)
+
+```
+
+A calendar file-t ezen a ponton elhagytam, mivel egy szept. 19-én látható elérhetőségen kívül más extra információt nem tartalmazott a többi változóhoz képest.
+
+```{r}
+#Merge előtt leszűkítem a táblákat
+
+
+listings_total1 <- listings[ , c("id", "host_id", "neighbourhood_group", "room_type", "price", "number_of_reviews", "reviews_per_month", "availability_365")]
+listings_total2 <- listings_detailed[ , c("id", "host_response_time", "host_response_rate", "host_is_superhost", "host_listings_count", "host_has_profile_pic", "host_identity_verified", "is_location_exact", "property_type", "accommodates", "bathrooms", "bedrooms", "beds", "bed_type", "weekly_price", "monthly_price", "security_deposit", "cleaning_fee", "maximum_nights", "has_availability", "last_review", "review_scores_rating", "review_scores_checkin", "review_scores_accuracy", "review_scores_cleanliness", "review_scores_communication", "review_scores_location", "review_scores_value", "instant_bookable", "cancellation_policy", "require_guest_profile_picture", "availability_30")]
+
+listings_total <- merge(listings_total1, listings_total2, by="id")
+
+listings_total$id <- as.character(listings_total$id)
+
+nrow(listings_total)
+
+
+```
+
+```{r, echo=FALSE}
+as.data.table(reviews)
+
+colnames(reviews) <- c("id", "date")
+listings_total <- listings_total[, id:=as.integer(id)]
+
+summary(listings_total$id)
+total <- merge(reviews, listings_total, by="id")
+
+summary(total)
+```
+
+#Június-Szeptember becsült foglalási arány kiszámítása
+
+```{r}
+#Első lépés az értékelések száma apartmanonként
+#Bökkenő: nem egyértelműen eldönthetőhogy egy hó eleji értékelés arra a hónapra vagy a korábbira vonatkozott. Hogy mindegyik hónapot külön tudjam vizsgálni újabb egyszerűsítéssel éltem. Az előző havi értékeléseknek "1 hét haladékot" számoltam, szeptember esetében pedig 2-t.
+
+total <- total[, month:= ifelse(date>="2019-09-07", "September",
+                                ifelse(date>="2019-08-07", "August", 
+                                       ifelse(date>="2019-07-07", "July", "June")))]
+
+#Ez alapj összesíthetjük egy szállást az adott hónapban hányszor foglaltak ki. Az Airbnb legfrisebb becslése 2015-ös amiben az átlagos tartózkodást 4,6 napra becsülték. Az Inside Airbnb csapata ismeretlen friss adat esetén 3 napos tartózkodással becsül. Mielőtt meghatároztam volna azt a számot amivel én becslem a napok számát, kíváncsi voltam a foglalási arányok eloszlására.
+min(total$date)
+hiba <- subset(total, total$last_review<="2019-06-01")
+summary(hiba)
+#Kíváncsi voltam csúszott-e hiba a táblázatba ezért kikértem azokat a szállásokat ahol az utolsó értékelés június 1. előtt volt. Meglepő módon kilistázott közel 2000 sort, de mindegyiknél volt friss értékelés.
+kable(hiba[1:5])
+
+#Number of bookings per month
+
+total <- total[, total_bookings:= (count=.N), by=id]
+#50%-os szabálynál
+total <- total[, total_bookings:= (total_bookings*2), by=id]
+
+total <- total[, monthly_bookings:=(count=.N), by=.(id, month)]
+total <- total[, monthly_bookings:=(monthly_bookings*2), by=.(id, month)]
+
+bookings <- total[, total_bookings, by=id]
+bookings <- unique(bookings)
+
+hist <- ggplot(bookings, aes(total_bookings))+geom_histogram(bins=100)+theme_classic()+ggtitle("Becsült foglalások számának eloszlása a teljes időszakban") + xlab("Foglalások száma/szálláshely") + ylab("Gyakoriság")
+hist
+
+summary(bookings$total_bookings)
+```
+
+4 hónap alatt kicsit sok 316 foglalás - és fizikailag lehetetlen. 
+Nézzük meg a havi foglalásokat
+
+```{r}
+bookings_monthly <- total[, c("id","monthly_bookings", "month")]
+bookings_monthly <- unique(bookings_monthly)
+
+hist_2 <-ggplot(bookings_monthly, aes(monthly_bookings, fill=month))+geom_histogram(bins=100)+theme_classic()+ggtitle("Becsült foglalások számának eloszlása havi felbontásban") + xlab("Foglalások száma/szálláshely") + ylab("Gyakoriság")+facet_grid(rows=vars(month))
+hist_2
+
+august <- bookings_monthly[ month=="August"]
+summary(august)
+
+```
+
+Következő lépés az outlierek "eltüntetése".
+
+1. lépés: az 50%-os rátát közelítettem az Airbnb 72%-hoz, így tegyük fel, hogy 3-ból 2 ember hagy értékelést. A szorzó így 2-ről 1,5-re módosulna.
+Sajnos az R nem tudta kezelni a törteket (illetve én nem tudtam beállítani, hogy hatékonyan kezelje) így maradtam a 2-es szorzónál.
+
+Mivel eddig foglalásokról volt szó (1 értékelés=2 foglalás), a napokkal egyéltalán nem is foglalkoztunk. 
+
+*Ezen a ponton kissé kezdett bonyolódni a feladat és a becslés egyre jobban torzult, ezért nem a napokra fókuszáltam, hanem a havi foglalások számára.*
+
+Meg kellett becsülni egy keretet ami közelíthet a valósághoz. Első körben visszaállítottam az értékelési rátát 100%-ra, majd beállítottam egy havi maximum 12 foglalásos limitet. Ez átlag 2 éjszakás tartózkodás mellett is több mint havi 70%-os kihasználtságot jelent egy-egy szállás esetén.
+
+```{r}
+total <- total[, total_bookings:= (count=.N), by=id]
+total <- total[, monthly_bookings:=(count=.N), by=.(id, month)]
+
+outlier <- subset(total, total$monthly_bookings> 12)
+nrow(outlier)
+#Kevesebb mint 5000 sor esik ki
+
+total <- subset(total, total$monthly_bookings< 13)
+total <- total[, total_bookings:= (count=.N), by=id]
+
+max(total$total_bookings)
+max(total$monthly_bookings)
+
+```
+
+Ismét a hisztogramok:
+
+```{r}
+bookings2 <- total [, c("id","total_bookings")]
+bookings2 <- unique(bookings2)
+
+hist <- ggplot(bookings2, aes(total_bookings))+geom_histogram(bins=100)+theme_classic()+ggtitle("Becsült foglalások számának eloszlása a teljes időszakban") + xlab("Foglalások száma/szálláshely") + ylab("Gyakoriság")
+hist
+
+max(bookings2$total_bookings)
+
+bookings_monthly <- total[, c("id","monthly_bookings", "month")]
+bookings_monthly <- unique(bookings_monthly)
+
+hist_2 <-ggplot(bookings_monthly, aes(monthly_bookings, fill=month))+geom_histogram(bins=10)+theme_classic()+ggtitle("Becsült foglalások számának eloszlása havi felbontásban") + xlab("Foglalások száma/szálláshely") + ylab("Gyakoriság")+facet_grid(rows=vars(month))
+hist_2
+
+```
+
+#Összefüggések a többi változóval
+
+
+
+
