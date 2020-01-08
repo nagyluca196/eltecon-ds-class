@@ -33,11 +33,13 @@ Először egy predikciós modellben gondolkodtam, ami meghatározná a várható
 
 Tehát a végső kérdésem a következő:
 
-Mitől függ egy Airbnb lefoglaltsága?
+Milyen összefüggéseket figyelhetünk meg a madridi Airbnb-k foglalási arányában?
 
-Ugyanakkor ha erre a kérdésre választ találtam, már megvoltak azok a változók amik befolyásolhatják a foglaltságot, így egy lépéssel tovább mentem és készítettem egy egyszerű predikciós modellt.
+Eredetileg egy rövid predikciót is terveztem amivel előre lehetne jelezni a következő havi foglaltságot, de sajnos ezt az adatok - az én képességeim szintjén - nem igazán tették lehetővé.
 
-Az adatbázis - mint ahogy azt az elsődleges leíró statisztikáknál is megemlítem - viszonylag nagy és rengeteg elemzési lehetőséget nyer. A feladat megoldása során igyekeztem egy kisebb részre koncantrálni, hogy ne vesszek el, de ugyanakkor megpróbáltam új technikákat felhasználni
+A projekt két nagyobb részből áll. Az első részben megpróbálom megbecsülni egy-egy szálláshely havi foglalásainak a számát, a második részben pedig a lehetséges összefüggéseket mutatom be néhány leíró statisztikával.
+
+Az adatbázis - mint ahogy azt az elsődleges leíró statisztikáknál is megemlítem - viszonylag nagy és rengeteg elemzési lehetőséget nyer. A feladat megoldása során igyekeztem egy kisebb részre koncantrálni, hogy ne vesszek el, de ugyanakkor olyan eszközöket haszálni amiket az órán tanultunk.
 
 
 #Adatok forrása és rövid háttere
@@ -49,7 +51,7 @@ Az adatbázis készítője ebben a formátumban az Inside Airbnb projekt. Az Ins
 Madridról a következő interaktív térkép elérhető:
 http://insideairbnb.com/madrid
 
-Mivel az adatokat közzéteszik és néhány városban akár havonta tesznek közzé új scrape-t, egy rövid időre felmerült bennem másik város, mint Madrid elemzése - így ha fura eredmények jönnek ki, könnyebben tudom magyarázni helyismeret segítségével. Az egyik város Budapest lett volna, de itt pont nincs összegyűjtött adat. A másik város Tokió, de ott feleannyi listázásról volt információ és nagyon egyenlőtlenül szóródtak a helyszínek, ezért azt is elvetettem.
+Mivel az adatok nyilvánosak és néhány városban akár havonta tesznek közzé új scrape-t, egy rövid időre felmerült bennem másik város, mint Madrid elemzése - így ha fura eredmények jönnek ki, könnyebben tudom magyarázni helyismeret segítségével. Az egyik város Budapest lett volna, de itt pont nincs összegyűjtött adat. A másik város Tokió, de ott feleannyi listázásról volt információ és nagyon egyenlőtlenül szóródtak a helyszínek, ezért azt is elvetettem.
 
 #Elsődleges leró statisztika
 
@@ -158,7 +160,7 @@ listings_total <- merge(listings_total1, listings_total2, by="id")
 listings_total$id <- as.character(listings_total$id)
 
 nrow(listings_total)
-
+#A szállások száma
 
 ```
 
@@ -246,6 +248,7 @@ nrow(outlier)
 total <- subset(total, total$monthly_bookings< 13)
 total <- total[, total_bookings:= (count=.N), by=id]
 
+
 max(total$total_bookings)
 max(total$monthly_bookings)
 
@@ -271,7 +274,102 @@ hist_2
 ```
 
 #Összefüggések a többi változóval
+Miután elkészült egy könnyen használható adatbázis, a következő összefüggéseket vizsgáltam
+##Neighbourhood hatása 
 
+```{r}
+
+hist_3 <-ggplot(total, aes(total_bookings, fill=neighbourhood_group))+geom_histogram(bins=10)+theme_classic()+ggtitle("Becsült foglalások számának eloszlása környékre vonatkozólag") + xlab("Foglalások száma/szálláshely") + ylab("Gyakoriság")
+
+hist_3
+
+```
+
+Bár nagy a kerületek/szomszédságok száma, látszik, hogy a legkedveltebb a "Centro".
+
+Átlagolva:
+```{r}
+
+total <- total[, mean_nbh:=(mean(total_bookings)), by=neighbourhood_group]
+hist4 <- total[, c("mean_nbh", "neighbourhood_group")]
+hist4 <- unique(hist4)
+hist_4 <-ggplot(hist4, aes(x=neighbourhood_group, y=mean_nbh, fill=neighbourhood_group))+geom_bar(stat="identity",position="dodge")+ggtitle("Becsült foglalások átlaga környékre vonatkozólag") + xlab("Neighbourhoods") + ylab("Átlagos foglaltság")+labs(fill="Neighbourhoods")
+
+hist_4
+```
+
+A különség a szálláshelyek számában keresendő:
+
+```{r}
+nb_id <- total[, c("id", "neighbourhood_group")]
+nb_id <- unique(nb_id)
+nb_id <- nb_id[, number:=(count=.N), by=neighbourhood_group]
+
+plot <-ggplot(nb_id, aes(x=neighbourhood_group, y=number, fill=neighbourhood_group))+geom_bar(stat="identity",position="dodge")+ggtitle("Szállások száma neighbourhood alapján") + xlab("Neighbourhoods") + ylab("Szállások száma")+labs(fill="Neighbourhoods")
+plot
+```
+
+##Szállások atrribútumai {.tabset .tabset-pills}
+### Szállás típusa
+```{r}
+plot <- ggplot(total, aes(x=total_bookings ,fill=bed_type))+geom_bar()+facet_wrap(vars(bed_type), scales = "free")+ggtitle("Foglalások és az ágyak típusa") + xlab("Teljes foglalások száma") + ylab("Foglalások száma")+labs(fill="Ágytípus")
+plot
+```
+
+###Válaszidő
+```{r}
+plot <- ggplot(total, aes(x=total_bookings ,fill=host_response_time))+geom_bar()+facet_wrap(vars(host_response_time), scales = "free")+ggtitle("Összes foglalás és válaszidő") + xlab("Teljes foglalások száma") + ylab("Foglalások száma")+labs(fill="Válaszidó")
+plot
+
+```
+
+###Igazoltatás
+```{r}
+plot <- ggplot(total, aes(x=total_bookings ,fill=host_identity_verified))+geom_bar()+facet_wrap(vars(host_identity_verified), scales = "free")+ggtitle("") + xlab("Foglalások száma szálláshelyenként") + ylab("Összes foglalások száma")+labs(fill="Host ellenőrzött-e")
+plot
+
+plot2 <- ggplot(total, aes(x=total_bookings ,fill=host_has_profile_pic))+geom_bar()+facet_wrap(vars(host_has_profile_pic), scales = "free")+ggtitle("Profilképek hatása") + xlab("Foglalások száma") + ylab("Összes foglalás száma")+labs(fill="Profilkép")
+plot2
+```
+
+
+###Árarány
+```{r}
+price_id <- total[, c("id", "price", "month", "monthly_bookings", "total_bookings", "neighbourhood_group")]
+price_id <- unique(price_id)
+
+plot <- ggplot(price_id, aes(x=price, y=total_bookings, fill=neighbourhood_group))+geom_point()
+plot
+
+summary(total$price)
+#Kiugró értékek eltávolítása
+
+price_id <- subset(price_id, price<1000)
+
+plot <- ggplot(price_id, aes(x=price, y=total_bookings, fill=neighbourhood_group, color=neighbourhood_group))+geom_point()
+plot
+
+plot3 <- ggplot(price_id, aes(x=price, y=total_bookings, fill=neighbourhood_group, color=neighbourhood_group))+geom_point()+facet_grid(scales="free", vars(neighbourhood_group))+labs(fill="Neighbourhood")+xlab("Teljes foglalások száma")+ylab("Ár")
+plot3
+
+```
+
+
+###Értékelések
+```{r}
+plot <- ggplot(total, aes(x=review_scores_rating, y=total_bookings ,fill=neighbourhood_group, color=neighbourhood_group))+geom_point()+ggtitle("Foglalások és értékelések") + xlab("Teljes foglalások száma") + ylab("Foglalások száma")
+plot
+
+```
+
+#Összefoglalás
+
+A projektben megpróbáltam bemutatni a madridi Airbnb foglalásainak számát és mutattam pár összefüggést.
+A projekt tovább fejleszthető (pl. átlagok hozzáadása, többszörös csoportosítás) és másfajta, bonyolultabb becslések is végrehajthatók. 
+
+Vizsgálhattam volna várható árakat, de a konzultáció alapján inkább egy leíró jellemzés felé indultam el.
+
+*Szerettem volna bonyolultabb és látványosabb eszközöket is használni az órán tanultakból, de remélem ilyen mélységben is megfeleő a végső projekt. A pénteki prezentációra egy módosítást szeretnék végrehajtani, mégpedig a kerületenkénti foglaltságot havi szinten is el akarom különíteni az ábrán.*
 
 
 
