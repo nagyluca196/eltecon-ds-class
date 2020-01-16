@@ -505,11 +505,13 @@ neighb <- merge(total_n, total_cluster, by="id")
 plot3 <- ggplot(neighb, aes(x=cluster, y=price, fill=neighbourhood_group, colour=neighbourhood_group))+geom_point()
 plot3
 
+plot4 <- ggplot(neighb, aes(x=cluster, fill=neighbourhood_group))+geom_histogram(bins=5, show.legend = FALSE)+facet_wrap(vars(neighbourhood_group), scales="free")
+plot4
 ```
 
 Mit tudunk ezek alapján?
 
--nem különülnek el élesen a szomszédságok
+-nem különülnek el élesen a szomszédságok csak clusterezés alapján (lehet egyébként sem annyira, legalábbis nem a 18 változó alapján)
 -18 attribútum alapján nem tud az R nagyon karakteres clastereket létrehozni
 -kiemelkedő a km summary-ban mint átlagok -> ár, értékelések száma, host/listings
 
