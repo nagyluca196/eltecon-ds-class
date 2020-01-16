@@ -491,6 +491,22 @@ print(km)
 
 ```
 
+A két plotoknál próbáltam ár/érékelés, ár/értékelések száma stb. scatterplotot, de (1) az outlierek miatt (2) a sok hasonló érték miatt nagyon zavarosak lettek:
+
+```{r}
+plot1 <- ggplot(total_cluster, aes(x=price, y=number_of_reviews, fill=cluster, colour=cluster))+geom_point()+facet_wrap(vars(cluster), scales="free")
+plot1
+
+plot2 <- ggplot(total_cluster, aes(x=price, y=accommodates, fill=cluster, colour=cluster))+geom_point()+facet_wrap(vars(cluster), scales="free")
+plot2
+
+plot3 <- ggplot(total_cluster, aes(x=price, y=review_scores_rating, fill=cluster, colour=cluster))+geom_point()+facet_wrap(vars(cluster), scales="free")
+plot3
+```
+
+
+
+
 Nézzük működik-e a neighbourhoodokra
 
 ```{r}
@@ -511,7 +527,7 @@ plot4
 
 Mit tudunk ezek alapján?
 
--nem különülnek el élesen a szomszédságok csak clusterezés alapján (lehet egyébként sem annyira, legalábbis nem a 18 változó alapján)
+-nem különülnek el élesen a szomszédságok csak clusterezés alapján (lehet egyébként sem annyira, legalábbis nem a 18 változó)
 -18 attribútum alapján nem tud az R nagyon karakteres clastereket létrehozni
 -kiemelkedő a km summary-ban mint átlagok -> ár, értékelések száma, host/listings
 
