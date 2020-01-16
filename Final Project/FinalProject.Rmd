@@ -27,7 +27,7 @@ library(DT)
 
 A feladat során fel kellett tennünk egy kérdést, adatot kellett keresnünk és felderítő elemzést végezni.
 
-A zrájó projektemben a lépések megfordultak, és először adatokat találtam, majd utána tettem fel egy kérdést és kezdtem el a felderítő elemzést.
+A záró projektemben a lépések megfordultak, és először adatokat találtam, majd utána tettem fel egy kérdést és kezdtem el a felderítő elemzést.
 
 Először egy predikciós modellben gondolkodtam, ami meghatározná a várható éjszaka/fő árat, de az adatok megismerése közben inkább afelé húzott a kíváncsiság, mitől függ, hogy az a szállás éppen üres? Meg lehet jósolni, hogy milyen paraméterek adnak jó esélyt arra, hogy magas legyen a kihasználtság?
 
@@ -188,10 +188,11 @@ total <- total[, month:= ifelse(date>="2019-09-07", "September",
 
 #Ez alapj összesíthetjük egy szállást az adott hónapban hányszor foglaltak ki. Az Airbnb legfrisebb becslése 2015-ös amiben az átlagos tartózkodást 4,6 napra becsülték. Az Inside Airbnb csapata ismeretlen friss adat esetén 3 napos tartózkodással becsül. Mielőtt meghatároztam volna azt a számot amivel én becslem a napok számát, kíváncsi voltam a foglalási arányok eloszlására.
 min(total$date)
-hiba <- subset(total, total$last_review<="2019-06-01")
-summary(hiba)
+
 #Kíváncsi voltam csúszott-e hiba a táblázatba ezért kikértem azokat a szállásokat ahol az utolsó értékelés június 1. előtt volt. Meglepő módon kilistázott közel 2000 sort, de mindegyiknél volt friss értékelés.
-kable(hiba[1:5])
+hiba <- subset(total, total$last_review<="2019-06-01")
+range(total$last_review)
+range(total$date)
 
 #Number of bookings per month
 
@@ -369,7 +370,157 @@ A projekt tovább fejleszthető (pl. átlagok hozzáadása, többszörös csopor
 
 Vizsgálhattam volna várható árakat, de a konzultáció alapján inkább egy leíró jellemzés felé indultam el.
 
-*Szerettem volna bonyolultabb és látványosabb eszközöket is használni az órán tanultakból, de remélem ilyen mélységben is megfeleő a végső projekt. A pénteki prezentációra egy módosítást szeretnék végrehajtani, mégpedig a kerületenkénti foglaltságot havi szinten is el akarom különíteni az ábrán.*
+##Projekt javítása: clusterezés k-means módszerrel{.tabset, .tabset-pills}
 
+### Adatok előkészítése
 
+A visszajelzés alapján nem volt igazán értelme korlátoznom az értékelések számára, ezért az adatbázis az összes értékelést tartalmazza -> hirdetés/júni-szept
 
+Új adattábl ami folytonos változókat tartalmaz
+
+```{r}
+total_cluster <- merge(reviews, listings_total, by="id")
+
+names(total_cluster)
+```
+
+Folytonos, numerikus változók:
+
+```{r}
+total_cluster[, sapply(total_cluster, is.numeric)]
+```
+
+Ami ebből numerikussá alakítható: weekly_price, monthly_price, security_deposit, cleaning_fee
+
+```{r}
+library(dplyr)
+total_cluster <- total_cluster[, weekly_price:=as.numeric(weekly_price)]
+total_cluster <- total_cluster[, monthly_price:=as.numeric(monthly_price)]
+total_cluster <- total_cluster[, security_deposit:=as.numeric(security_deposit)]
+total_cluster <- total_cluster[, cleaning_fee:=as.numeric(cleaning_fee)]
+
+#Nem tudta kezelni, valószínűleg a dollárjel miatt+NA-k
+
+total_cluster <- merge(reviews, listings_total, by="id")
+
+total_cluster[, sapply(total_cluster, is.numeric)]
+
+total_cluster <- total_cluster%>%select_if(is.numeric)
+#host id eltávolítása
+total_cluster <- total_cluster[, -2]
+```
+
+18 folytonos numerikus változó + apartmanok id-ja
+
+###K-means
+
+```{r}
+library(tidyverse)
+library(cluster)
+library(factoextra)
+
+# A factoextra csomag beépített grafikont tartalmaz a k megtalálásához, gyorsabb és kevesebb sor mint plotolni
+
+#ID eltávolítása ideiglenesen
+
+#Az ID folytonos változóként veszi, ezért nem hagyhatom benn a scale-nél. Egyelőre nem szedtem külön az apartmanokat, erre most kerül sor
+
+total_cluster <- unique(total_cluster)
+total_cluster <- na.omit(total_cluster)
+#innentől csak az egyes apartmanokra vonatkozó adatok vannak az adatbázisban, de az összes értékelésszám benne van
+
+rownames(total_cluster) <- total_cluster$id
+total_cluster$id=NULL
+cluster_k <- as.data.table(scale(total_cluster))
+
+#MacOs kifut a memóriából, ezért test-set sample (n=5000)
+
+set.seed(122)
+cluster_k_sample <- sample(1:nrow(cluster_k), 5000, replace=FALSE)
+cluster_k_sample <- cluster_k[cluster_k_sample, ]
+
+cluster_k_sample <- na.omit(cluster_k_sample)
+
+#K elbow módszerrel:
+
+fviz_nbclust(cluster_k_sample, kmeans, method="wss")
+
+#Bend talán k=5-nél?
+
+#másik módszer:Silhouette (maximum keresése)
+
+fviz_nbclust(cluster_k_sample, kmeans, method="silhouette")
+
+#a második ábra alpaján az optimális k=2 (többre számítottam)
+```
+
+```{r}
+#Még egy módszer (Gapstat via: https://uc-r.github.io/kmeans_clustering#fn:scale)
+
+#gap_stat <- clusGap(cluster_k_sample, FUN=kmeans, nstart=25, K.max=20, B=50)
+
+#fviz_gap_stat(gap_stat)
+
+#Nem futott le 4 perc alatt
+```
+
+###K=6
+
+Várt: Neighbourhood-ok valamennyire tükröződnek
+
+```{r}
+set.seed(144)
+km <- kmeans(total_cluster, centers=5, nstart=25)
+
+summary(km$cluster)
+
+total_cluster$id=rownames(total_cluster)
+total_cluster$cluster=km$cluster
+
+#Lássuk a clustereket:
+
+plot1 <- ggplot(total_cluster, aes(x=cluster, y=number_of_reviews, fill=cluster, colour=cluster))+geom_point()
+plot1
+
+plot2 <- ggplot(total_cluster, aes(x=cluster, y=price, fill=cluster, colour=cluster))+geom_point()
+plot2
+
+print(km)
+
+#Mindegyik clusterről elmonfható valami (pl árkategória, host_listings_count, number_of reviews)
+
+```
+
+Nézzük működik-e a neighbourhoodokra
+
+```{r}
+
+total_n <- total[, c("neighbourhood_group","id" )]
+total_n <- unique(total_n)
+
+total_cluster <- total_cluster[, id:=as.numeric(id)]
+
+neighb <- merge(total_n, total_cluster, by="id")
+
+plot3 <- ggplot(neighb, aes(x=cluster, y=price, fill=neighbourhood_group, colour=neighbourhood_group))+geom_point()
+plot3
+
+```
+
+Mit tudunk ezek alapján?
+
+-nem különülnek el élesen a szomszédságok
+-18 attribútum alapján nem tud az R nagyon karakteres clastereket létrehozni
+-kiemelkedő a km summary-ban mint átlagok -> ár, értékelések száma, host/listings
+
+Ha k=21 cluster:
+
+```{r}
+
+km <- kmeans(total_cluster, centers=10, nstart=25)
+
+#Hibaüzenet, képtelen lefuttatni
+
+```
+
+-Clusterezésnél térképkkordináták bevonása: pl. milyen közel van egy hasonló szállás (hatással lehet az árra)
